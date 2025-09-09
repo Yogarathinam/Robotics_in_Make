@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Robot Control Panel</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #111;
+      color: #eee;
+      text-align: center;
+      padding: 20px;
+    }
+    h1 { color: #0f9; }
+    .section {
+      margin: 20px auto;
+      padding: 15px;
+      background: #222;
+      border-radius: 12px;
+      width: 350px;
+    }
+    .controls button {
+      margin: 5px;
+      padding: 15px 25px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      background: #0a84ff;
+      color: white;
+      cursor: pointer;
+    }
+    .controls button:active {
+      background: #005bb5;
+    }
+    .slider-container {
+      margin: 10px 0;
+    }
+    input[type=range] {
+      width: 200px;
+    }
+    .preset button {
+      margin: 3px;
+      padding: 5px 10px;
+      font-size: 14px;
+      background: #444;
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+    }
+    #distance {
+      font-size: 20px;
+      color: #0f0;
+    }
+    #wsad-toggle, #connect {
+      margin-top: 15px;
+      padding: 10px 20px;
+      font-size: 16px;
+      font-weight: bold;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    #wsad-toggle {
+      background: #f90;
+      color: black;
+    }
+    #wsad-toggle.active {
+      background: #0f0;
+      color: black;
+    }
+    #connect {
+      background: #0af;
+      color: white;
+    }
+  </style>
+</head>
+<body>
+
+<h1>🤖 Robot Control Panel</h1>
+
+<button id="connect">🔌 Connect to Arduino</button>
+
+<div class="section">
+  <h2>Drive Control</h2>
+  <div class="controls">
+    <div>
+      <button id="forward">↑ Forward</button>
+    </div>
+    <div>
+      <button id="left">← Left</button>
+      <button id="stop">■ Stop</button>
+      <button id="right">→ Right</button>
+    </div>
+    <div>
+      <button id="backward">↓ Backward</button>
+    </div>
+  </div>
+  <button id="wsad-toggle">Enable WSAD</button>
+</div>
+
+<div class="section">
+  <h2>Servos</h2>
+
+  <div class="slider-container">
+    <label>Pan: <input type="range" id="pan" min="0" max="180" value="90"></label>
+    <div class="preset">
+      <button onclick="sendCommand('P0')">0°</button>
+      <button onclick="sendCommand('P90')">90°</button>
+      <button onclick="sendCommand('P180')">180°</button>
+    </div>
+  </div>
+
+  <div class="slider-container">
+    <label>Tilt: <input type="range" id="tilt" min="0" max="180" value="90"></label>
+    <div class="preset">
+      <button onclick="sendCommand('T0')">0°</button>
+      <button onclick="sendCommand('T90')">90°</button>
+      <button onclick="sendCommand('T180')">180°</button>
+    </div>
+  </div>
+
+  <div class="slider-container">
+    <label>Gripper: <input type="range" id="grip" min="0" max="180" value="90"></label>
+    <div class="preset">
+      <button onclick="sendCommand('G0')">0°</button>
+      <button onclick="sendCommand('G90')">90°</button>
+      <button onclick="sendCommand('G180')">180°</button>
+    </div>
+  </div>
+</div>
+
+<div class="section">
+  <h2>Ultrasonic</h2>
+  <div id="distance">Distance: -- cm</div>
+</div>
+
+<script>
+let wsadEnabled = false;
+let port, writer, reader;
+
+// --- Web Serial Connect ---
+document.getElementById("connect").onclick = async () => {
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 9600 });
+    writer = port.writable.getWriter();
+    reader = port.readable.getReader();
+    alert("✅ Connected to Arduino!");
+
+    // start reading ultrasonic feedback
+    readSerialLoop();
+  } catch (err) {
+    alert("❌ Failed to connect: " + err);
+  }
+};
+
+async function sendCommand(cmd) {
+  if (!writer) {
+    console.log("⚠️ Not connected:", cmd);
+    return;
+  }
+  console.log("Send:", cmd);
+  const data = new TextEncoder().encode(cmd + "\n");
+  await writer.write(data);
+}
+
+// --- Servo sliders (real-time) ---
+document.getElementById("pan").oninput = e => sendCommand("P" + e.target.value);
+document.getElementById("tilt").oninput = e => sendCommand("T" + e.target.value);
+document.getElementById("grip").oninput = e => sendCommand("G" + e.target.value);
+
+// --- Motor buttons (hold based) ---
+function bindHoldButton(id, command) {
+  let btn = document.getElementById(id);
+  btn.onmousedown = () => sendCommand(command);
+  btn.onmouseup = () => sendCommand("S");
+  btn.ontouchstart = () => sendCommand(command);
+  btn.ontouchend = () => sendCommand("S");
+}
+bindHoldButton("forward", "F");
+bindHoldButton("backward", "B");
+bindHoldButton("left", "L");
+bindHoldButton("right", "R");
+document.getElementById("stop").onclick = () => sendCommand("S");
+
+// --- WSAD toggle ---
+document.getElementById("wsad-toggle").onclick = () => {
+  wsadEnabled = !wsadEnabled;
+  document.getElementById("wsad-toggle").classList.toggle("active", wsadEnabled);
+  document.getElementById("wsad-toggle").textContent = wsadEnabled ? "WSAD Enabled" : "Enable WSAD";
+};
+
+// --- WSAD key handling ---
+document.addEventListener("keydown", e => {
+  if (!wsadEnabled) return;
+  if (e.repeat) return;
+  if (e.key === "w") sendCommand("F");
+  if (e.key === "s") sendCommand("B");
+  if (e.key === "a") sendCommand("L");
+  if (e.key === "d") sendCommand("R");
+});
+document.addEventListener("keyup", e => {
+  if (!wsadEnabled) return;
+  if (["w","a","s","d"].includes(e.key)) sendCommand("S");
+});
+
+// --- Read Serial (for ultrasonic) ---
+async function readSerialLoop() {
+  let decoder = new TextDecoder();
+  while (port && reader) {
+    try {
+      const { value, done } = await reader.read();
+      if (done) break;
+      if (value) {
+        let text = decoder.decode(value);
+        document.getElementById("distance").innerText = "Distance: " + text.trim();
+      }
+    } catch (err) {
+      console.error("Read error:", err);
+      break;
+    }
+  }
+}
+</script>
+
+</body>
+</html>
